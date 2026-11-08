@@ -1,0 +1,4 @@
+Контакты: info@example.org, https://www.example.com/docs
+Международные имена: пример.рф bücher.de faß.de
+Ошибки: -bad.com bad..com example.123 localhost
+Абсолютное имя: Example.ORG.
