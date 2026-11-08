@@ -1,11 +1,17 @@
-# Чтение текста и файлов с ограничением размера.
+# Чтение текста, файла и HTTP-документа через общий контракт.
 
 from dataclasses import dataclass
+from email.message import Message
+from http.client import HTTPException
 from pathlib import Path
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 from domain_search.application.search import Source, SourceError
+from domain_search.infrastructure.html import html_to_text
 
 MAX_BYTES = 5 * 1024 * 1024
+TIMEOUT_SECONDS = 10
 
 
 @dataclass(frozen=True)
@@ -31,6 +37,43 @@ class FileSource(Source):
                 return stream.read(MAX_BYTES + 1)
         except OSError as error:
             raise SourceError(f"Не удалось прочитать файл: {error}") from error
+
+
+@dataclass(frozen=True)
+class URLSource(Source):
+    url: str
+
+    def read(self) -> str:
+        data, encoding, media_type = self._download()
+        text = _decode_text(data, encoding)
+        return html_to_text(text) if media_type == "text/html" else text
+
+    def _download(self) -> tuple[bytes, str, str]:
+        try:
+            request = _create_request(self.url)
+            with urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+                media_type = _text_media_type(response.headers)
+                encoding = (
+                    response.headers.get_content_charset() or "utf-8-sig"
+                )
+                data = response.read(MAX_BYTES + 1)
+        except (OSError, ValueError, HTTPException) as error:
+            raise SourceError(f"Не удалось загрузить URL: {error}") from error
+        return data, encoding, media_type
+
+
+def _create_request(url: str) -> Request:
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("Нужен абсолютный URL с http:// или https://.")
+    return Request(url, headers={"User-Agent": "DomainSearchLab/1.0"})
+
+
+def _text_media_type(headers: Message) -> str:
+    media_type = headers.get_content_type()
+    if media_type not in {"text/html", "text/plain"}:
+        raise SourceError(f"Неподдерживаемый тип документа: {media_type}")
+    return media_type
 
 
 def _decode_text(data: bytes, encoding: str) -> str:

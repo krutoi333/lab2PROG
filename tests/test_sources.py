@@ -1,16 +1,32 @@
 # Файлы создаются во временной папке, загрузка страниц подменяется.
 
+from email.message import Message
+from io import BytesIO
+
 import pytest
 
 from domain_search.application.search import SourceError
 from domain_search.domain.domains import RegexDomainMatcher
 from domain_search.infrastructure.html import html_to_text
-from domain_search.infrastructure.sources import FileSource, StringSource
+from domain_search.infrastructure.sources import (
+    FileSource,
+    StringSource,
+    URLSource,
+)
 
 
 @pytest.fixture
 def file_path(tmp_path):
     return tmp_path / "список доменов.txt"
+
+
+class PageResponse(BytesIO):
+    # Байты и заголовок вместо настоящего HTTP-ответа.
+
+    def __init__(self, content, content_type):
+        super().__init__(content)
+        self.headers = Message()
+        self.headers["Content-Type"] = content_type
 
 
 def test_text_is_not_modified():
@@ -75,3 +91,50 @@ def test_hidden_text_attributes_and_comments_are_skipped():
 
     assert len(found) == 1
     assert found[0].value == "example.org"
+
+
+def test_download_parameters_and_resource_cleanup(monkeypatch):
+    response = PageResponse(
+        b"<p>example.org</p>", "text/html; charset=utf-8"
+    )
+
+    def open_page(request, timeout):
+        assert request.full_url == "https://example.org"
+        assert timeout == 10
+        return response
+
+    monkeypatch.setattr(
+        "domain_search.infrastructure.sources.urlopen", open_page
+    )
+    source = URLSource("https://example.org")
+
+    assert source.read() == " example.org "
+    assert response.closed
+
+
+def test_declared_encoding_for_plain_text(monkeypatch):
+    content = "пример.рф".encode("cp1251")
+    response = PageResponse(content, "text/plain; charset=windows-1251")
+
+    def open_page(request, timeout):
+        return response
+
+    monkeypatch.setattr(
+        "domain_search.infrastructure.sources.urlopen", open_page
+    )
+    source = URLSource("http://example.org")
+
+    assert source.read() == "пример.рф"
+
+
+def test_network_timeout(monkeypatch):
+    def open_page(request, timeout):
+        raise TimeoutError("timeout")
+
+    monkeypatch.setattr(
+        "domain_search.infrastructure.sources.urlopen", open_page
+    )
+    source = URLSource("https://example.org")
+
+    with pytest.raises(SourceError, match="загрузить"):
+        source.read()
