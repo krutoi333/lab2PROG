@@ -1,6 +1,7 @@
-# Проверка доменных имен в ASCII и международной записи.
+# Правила проверки доменных имен и поиска в исходном тексте.
 
 import re
+from dataclasses import dataclass
 
 import idna
 
@@ -13,10 +14,40 @@ DOMAIN_PATTERN = re.compile(
 
 DOT_VARIANTS = str.maketrans({"。": ".", "．": ".", "｡": "."})
 
+# Ошибочный кандидат проверяется целиком: точки, дефисы и подчеркивания
+# не отделяются, чтобы bad..example.org не дал совпадение example.org.
+SEPARATORS = "/\\:@<>()[]{};,!?\"'=+&%#|«»“”‘’—–"
+TOKEN_PATTERN = re.compile(rf"[^\s{re.escape(SEPARATORS)}]+")
+
+
+@dataclass(frozen=True)
+class DomainMatch:
+    # Исходное написание, ASCII-форма и полуинтервал [start:end).
+
+    value: str
+    ascii_name: str
+    start: int
+    end: int
+
 
 class RegexDomainMatcher:
     def is_domain(self, name: str) -> bool:
         return _normalize_domain(name) is not None
+
+    def find_domains(self, text: str) -> list[DomainMatch]:
+        found = []
+        for candidate in TOKEN_PATTERN.finditer(text):
+            ascii_name = _normalize_domain(candidate.group())
+            if ascii_name is not None:
+                found.append(
+                    DomainMatch(
+                        candidate.group(),
+                        ascii_name,
+                        candidate.start(),
+                        candidate.end(),
+                    )
+                )
+        return found
 
 
 def _normalize_domain(name: str) -> str | None:

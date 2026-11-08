@@ -72,3 +72,34 @@ def test_unicode_dot_and_root(matcher):
 
 def test_length_is_checked_after_idna_encoding(matcher):
     assert not matcher.is_domain("я" * 64 + ".рф")
+
+
+def test_domains_in_urls_and_email(matcher):
+    text = "https://one.org/two.net user@EXAMPLE.COM?x=пример.рф"
+    found = matcher.find_domains(text)
+    assert [item.value for item in found] == [
+        "one.org", "two.net", "EXAMPLE.COM", "пример.рф",
+    ]
+    for item in found:
+        assert text[item.start:item.end] == item.value
+
+
+def test_duplicates_and_root_dot_are_preserved(matcher):
+    found = matcher.find_domains("example.org, example.org.")
+    assert [item.value for item in found] == ["example.org", "example.org."]
+    assert [(item.start, item.end) for item in found] == [(0, 11), (13, 25)]
+    assert [item.ascii_name for item in found] == ["example.org"] * 2
+
+
+def test_invalid_candidates_do_not_return_valid_suffixes(matcher):
+    text = "bad..example.org -example.org ex_ample.org example.org.."
+    assert matcher.find_domains(text) == []
+
+
+def test_canonical_forms_keep_original_unicode_offsets(matcher):
+    # Комбинируемый знак занимает отдельную позицию исходного текста.
+    text = "До: bu\u0308cher.de!"
+    item = matcher.find_domains(text)[0]
+    assert item.ascii_name == "xn--bcher-kva.de"
+    assert (item.start, item.end) == (4, 14)
+    assert text[item.start:item.end] == item.value
