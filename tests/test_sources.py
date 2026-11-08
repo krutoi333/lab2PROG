@@ -3,6 +3,8 @@
 import pytest
 
 from domain_search.application.search import SourceError
+from domain_search.domain.domains import RegexDomainMatcher
+from domain_search.infrastructure.html import html_to_text
 from domain_search.infrastructure.sources import FileSource, StringSource
 
 
@@ -47,3 +49,29 @@ def test_byte_limit(file_path, monkeypatch):
     file_path.write_bytes(b"12345")
     with pytest.raises(SourceError, match="Размер"):
         FileSource(file_path).read()
+
+
+def test_inline_text_and_entities():
+    markup = "<p>exa<b>mple</b>.org &amp; текст</p>"
+
+    assert html_to_text(markup) == " example.org & текст "
+
+
+def test_block_tags_do_not_join_separate_names():
+    markup = "<div>example</div><div>.org</div>"
+    text = html_to_text(markup)
+
+    assert RegexDomainMatcher().find_domains(text) == []
+
+
+def test_hidden_text_attributes_and_comments_are_skipped():
+    markup = (
+        "<script>bad.org</script><style>bad.net</style>"
+        "<template><i>bad.com</i></template><noscript>bad.edu</noscript>"
+        '<a href="attribute.org">example.org</a><!-- comment.org -->'
+    )
+    text = html_to_text(markup)
+    found = RegexDomainMatcher().find_domains(text)
+
+    assert len(found) == 1
+    assert found[0].value == "example.org"
