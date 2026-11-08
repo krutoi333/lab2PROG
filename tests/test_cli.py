@@ -1,9 +1,12 @@
 # Ввод задается списком строк; запуск и проверка вывода видны в тесте.
 
+import runpy
+import sys
 from unittest.mock import Mock
 
 import pytest
 
+from domain_search.__main__ import Application, main
 from domain_search.application.search import SearchService
 from domain_search.domain.domains import DomainMatch, RegexDomainMatcher
 from domain_search.infrastructure.sources import URLSource
@@ -132,3 +135,27 @@ def test_console_uses_service_contract(input_lines, capsys):
     assert "example.org -> example.org [0:11]" in output.out
     service.search.assert_called_once()
     service.check.assert_not_called()
+
+
+def test_main_uses_application_contract():
+    application = Mock(spec=Application)
+    application.run.return_value = 7
+
+    assert main(application) == 7
+    application.run.assert_called_once_with()
+
+
+def test_module_starts_with_menu(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["domain_search"])
+
+    def choose_exit(prompt):
+        return "0"
+
+    monkeypatch.setattr("builtins.input", choose_exit)
+    monkeypatch.delitem(sys.modules, "domain_search.__main__")
+
+    with pytest.raises(SystemExit) as error:
+        runpy.run_module("domain_search", run_name="__main__")
+
+    assert error.value.code == 0
+    assert "1. Проверить доменное имя" in capsys.readouterr().out
