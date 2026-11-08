@@ -48,3 +48,27 @@ def test_total_ascii_length_and_optional_root(matcher, root):
     assert len(maximum) == 253
     assert matcher.is_domain(maximum + root)
     assert not matcher.is_domain(maximum + "d" + root)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["пример.рф", "xn--e1afmkfd.xn--p1ai", "bücher.de"],
+)
+def test_unicode_and_valid_punycode(matcher, name):
+    assert matcher.is_domain(name)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["xn--a.org", "☕.example"],
+)
+def test_malformed_ace_and_disallowed_unicode(matcher, name):
+    assert not matcher.is_domain(name)
+
+
+def test_unicode_dot_and_root(matcher):
+    assert matcher.is_domain("пример。рф。")
+
+
+def test_length_is_checked_after_idna_encoding(matcher):
+    assert not matcher.is_domain("я" * 64 + ".рф")
